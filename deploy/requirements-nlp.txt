@@ -1,0 +1,5 @@
+# Heavy NLP deps — install ONLY when USE_LOCAL_MODELS=true
+# pip install -r requirements-nlp.txt
+torch>=2.1.0
+transformers>=4.40.0
+sentence-transformers>=2.7.0

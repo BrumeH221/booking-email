@@ -1,0 +1,33 @@
+# Secrets — NEVER commit
+.env
+.env.*
+!.env.example
+credentials.json
+token.json
+service_account.json
+secrets/
+
+# Local data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

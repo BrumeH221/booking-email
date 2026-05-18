@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.env
+.env.*
+.git/
+.gitignore
+data/
+credentials.json
+token.json
+service_account.json
+.venv/
+venv/
+requirements-nlp.txt
+*.md
+analytics_app.py
+manager_app.py
