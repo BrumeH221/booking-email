@@ -47,13 +47,44 @@ def _from_disk():
     return creds
 
 
+def _from_disk_readonly():
+    """Read token.json (and refresh if expired) without ever launching the
+    interactive OAuth flow. Used in cloud / CI where there is no browser."""
+    if not os.path.exists(config.GMAIL_TOKEN_PATH):
+        return None
+    creds = Credentials.from_authorized_user_file(
+        config.GMAIL_TOKEN_PATH, config.GMAIL_SCOPES,
+    )
+    if creds and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+    return creds
+
+
 def get_gmail_credentials():
-    if config.RUN_MODE == "cloud":
-        creds = _from_env()
-        if not creds:
-            raise RuntimeError("GMAIL_TOKEN_JSON env var missing in cloud mode")
+    """
+    Priority:
+      1. GMAIL_TOKEN_JSON env var (preferred for cloud)
+      2. token.json on disk — read-only, no browser flow
+      3. token.json + interactive OAuth flow (LOCAL only)
+    """
+    # 1) env var (cloud secret OR locally exported)
+    creds = _from_env()
+    if creds:
         return creds
-    return _from_disk()
+
+    # 2) disk token, read-only (works in CI / Cloud Run if file present)
+    creds = _from_disk_readonly()
+    if creds and creds.valid:
+        return creds
+
+    # 3) local interactive flow — only safe to attempt on a developer machine
+    if config.RUN_MODE != "cloud":
+        return _from_disk()
+
+    raise RuntimeError(
+        "No Gmail credentials found. In cloud mode, set GMAIL_TOKEN_JSON env "
+        "var OR ship a valid token.json next to the code."
+    )
 
 
 _svc = None
