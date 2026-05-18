@@ -10,6 +10,7 @@ def _backend():
     if config.DB_BACKEND == "supabase":
         from backend.db_supabase import (
             init_db, save_booking, update_booking_status,
+            update_booking_fields, find_open_need_info_booking,
             get_booking, get_bookings_by_status, get_all_bookings,
             is_email_processed, mark_email_processed,
             find_similar_bookings,
@@ -17,6 +18,7 @@ def _backend():
     else:
         from backend.db_sqlite import (
             init_db, save_booking, update_booking_status,
+            update_booking_fields, find_open_need_info_booking,
             get_booking, get_bookings_by_status, get_all_bookings,
             is_email_processed, mark_email_processed,
             find_similar_bookings,
@@ -47,6 +49,17 @@ def save_booking(booking, gmail_message_id):
 def update_booking_status(booking_id, status, manager_note=""):
     _backend()["update_booking_status"](booking_id, status, manager_note)
     _mirror_sheets("update", booking_id)
+
+
+def update_booking_fields(booking_id, fields):
+    """Patch arbitrary booking fields (used by follow-up merge flow)."""
+    _backend()["update_booking_fields"](booking_id, fields)
+    _mirror_sheets("update", booking_id)
+
+
+def find_open_need_info_booking(customer_email):
+    """Most recent Need More Info row for this sender, or None."""
+    return _backend()["find_open_need_info_booking"](customer_email)
 
 
 def get_booking(booking_id):

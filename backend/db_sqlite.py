@@ -58,22 +58,13 @@ def init_db():
     cur.execute("""
         CREATE VIEW bookings_manager AS
         SELECT
-            id,
-            status,
-            intent,
-            sentiment,
+            id, status, intent, sentiment,
             full_name AS customer_name,
-            customer_email,
-            phone_number,
-            preferred_date,
-            preferred_time,
-            service,
-            location,
-            symptom,
-            summary,
-            manager_note,
-            created_at,
-            updated_at
+            customer_email, phone_number,
+            preferred_date, preferred_time,
+            service, location, symptom,
+            summary, manager_note,
+            created_at, updated_at
         FROM bookings
         ORDER BY id DESC
     """)
@@ -135,6 +126,70 @@ def update_booking_status(booking_id, status, manager_note=""):
     """, (status, manager_note, _now(), booking_id))
     conn.commit()
     conn.close()
+
+
+# Whitelist of columns that follow-up merges and other in-place patches
+# are allowed to touch. Keeps the door closed to accidentally rewriting
+# audit fields (id, created_at, embedding_json, gmail_message_id).
+_PATCHABLE_FIELDS = {
+    "status", "manager_note",
+    "full_name", "phone_number",
+    "preferred_date", "preferred_time",
+    "service", "location", "symptom",
+    "summary", "additional_notes", "customer_email",
+    "sentiment", "intent",
+}
+
+
+def update_booking_fields(booking_id, fields):
+    """
+    Generic patch - used by the follow-up flow (main.py) to merge a
+    customer's reply back into the original 'Need More Info' row instead
+    of inserting a duplicate.
+    """
+    if not fields:
+        return
+    if "status" in fields and fields["status"] not in config.ALL_STATUSES:
+        raise ValueError(f"Invalid status: {fields['status']}")
+    sets, args = [], []
+    for k, v in fields.items():
+        if k not in _PATCHABLE_FIELDS:
+            continue
+        sets.append(f"{k} = ?")
+        args.append(v)
+    if not sets:
+        return
+    sets.append("updated_at = ?")
+    args.append(_now())
+    args.append(booking_id)
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute(
+        f"UPDATE bookings SET {', '.join(sets)} WHERE id = ?",
+        args,
+    )
+    conn.commit()
+    conn.close()
+
+
+def find_open_need_info_booking(customer_email):
+    """
+    Return the most recent 'Need More Info' booking for this sender,
+    or None. Used by the follow-up merge flow.
+    """
+    if not customer_email:
+        return None
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM bookings "
+        "WHERE LOWER(customer_email) = LOWER(?) AND status = ? "
+        "ORDER BY id DESC LIMIT 1",
+        (customer_email, config.STATUS_NEED_MORE_INFO),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def get_booking(booking_id):

@@ -30,41 +30,38 @@ def init_db():
 def save_booking(booking, gmail_message_id):
     now = _now()
     row = {
-    # 1. Core booking info 
-    "status": booking.get("status") or config.STATUS_PENDING,
-    "intent": booking.get("intent"),
-    "customer_email": booking.get("customer_email"),
-    "full_name": booking.get("full_name"),
-    "phone_number": booking.get("phone_number"),
+        # 1. Core booking info
+        "status": booking.get("status") or config.STATUS_PENDING,
+        "intent": booking.get("intent"),
+        "customer_email": booking.get("customer_email"),
+        "full_name": booking.get("full_name"),
+        "phone_number": booking.get("phone_number"),
 
-    # 2. Appointment details
-    "preferred_date": booking.get("preferred_date"),
-    "preferred_time": booking.get("preferred_time"),
-    "service": booking.get("service"),
-    "location": booking.get("location"),
-    "symptom": booking.get("symptom"),
+        # 2. Appointment details
+        "preferred_date": booking.get("preferred_date"),
+        "preferred_time": booking.get("preferred_time"),
+        "service": booking.get("service"),
+        "location": booking.get("location"),
+        "symptom": booking.get("symptom"),
 
-    # 3. AI summary / notes
-    "summary": booking.get("summary") or "",
-    "additional_notes": booking.get("additional_notes") or "",
-    "manager_note": "",
+        # 3. AI summary / notes
+        "summary": booking.get("summary") or "",
+        "additional_notes": booking.get("additional_notes") or "",
+        "manager_note": "",
 
-    # 4. AI classification info
-    "sentiment": booking.get("sentiment"),
-    "sentiment_confidence": booking.get("sentiment_confidence", 0.0),
-    "intent_confidence": booking.get("intent_confidence", 0.0),
+        # 4. AI classification info
+        "sentiment": booking.get("sentiment"),
+        "sentiment_confidence": booking.get("sentiment_confidence", 0.0),
+        "intent_confidence": booking.get("intent_confidence", 0.0),
 
-    # 5. Source email data
-    "gmail_message_id": gmail_message_id,
-    "cleaned_body": booking.get("cleaned_body") or "",
+        # 5. Source email data
+        "gmail_message_id": gmail_message_id,
+        "cleaned_body": booking.get("cleaned_body") or "",
 
-    # 6. Technical / analytics fields
-    #"embedding": booking.get("embedding") or [],
-
-    # 7. Timestamps
-    "created_at": now,
-    "updated_at": now,
-}
+        # 7. Timestamps
+        "created_at": now,
+        "updated_at": now,
+    }
     resp = _get().table(config.SUPABASE_BOOKINGS_TABLE).insert(row).execute()
     if resp.data:
         return resp.data[0].get("id")
@@ -77,6 +74,58 @@ def update_booking_status(booking_id, status, manager_note=""):
     _get().table(config.SUPABASE_BOOKINGS_TABLE).update({
         "status": status, "manager_note": manager_note, "updated_at": _now(),
     }).eq("id", booking_id).execute()
+
+
+# Whitelist of columns that follow-up merges and other in-place patches
+# are allowed to touch. Keeps the door closed to accidentally rewriting
+# audit fields (id, created_at, gmail_message_id, embedding).
+_PATCHABLE_FIELDS = {
+    "status", "manager_note",
+    "full_name", "phone_number",
+    "preferred_date", "preferred_time",
+    "service", "location", "symptom",
+    "summary", "additional_notes", "customer_email",
+    "sentiment", "intent",
+}
+
+
+def update_booking_fields(booking_id, fields):
+    """
+    Generic patch - used by the follow-up flow (main.py) to merge a
+    customer's reply back into the original 'Need More Info' row instead
+    of inserting a duplicate. Mirrors the SQLite implementation.
+    """
+    if not fields:
+        return
+    if "status" in fields and fields["status"] not in config.ALL_STATUSES:
+        raise ValueError(f"Invalid status: {fields['status']}")
+    payload = {k: v for k, v in fields.items() if k in _PATCHABLE_FIELDS}
+    if not payload:
+        return
+    payload["updated_at"] = _now()
+    _get().table(config.SUPABASE_BOOKINGS_TABLE).update(payload).eq(
+        "id", booking_id
+    ).execute()
+
+
+def find_open_need_info_booking(customer_email):
+    """
+    Return the most recent 'Need More Info' booking for this sender,
+    or None. Used by the follow-up merge flow.
+    """
+    if not customer_email:
+        return None
+    resp = (
+        _get()
+        .table(config.SUPABASE_BOOKINGS_TABLE)
+        .select("*")
+        .ilike("customer_email", customer_email)
+        .eq("status", config.STATUS_NEED_MORE_INFO)
+        .order("id", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return resp.data[0] if resp.data else None
 
 
 def get_booking(booking_id):

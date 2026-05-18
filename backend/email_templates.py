@@ -1,7 +1,7 @@
 # email_templates.py
 #
 # Outbound email bodies. Tone is adjusted by sentiment when relevant
-# (angry/urgent → more apologetic / urgent tone).
+# (angry/urgent -> more apologetic / urgent tone).
 
 import config
 
@@ -28,7 +28,7 @@ def _opener(sentiment):
     if sentiment == config.SENTIMENT_ANGRY:
         return "We're sorry for any frustration you're experiencing."
     if sentiment == config.SENTIMENT_URGENT:
-        return "Thanks for your urgent message — we're prioritising your request."
+        return "Thanks for your urgent message - we're prioritising your request."
     return "Thanks for getting in touch."
 
 
@@ -48,15 +48,79 @@ def received(booking):
 
 
 def need_more_info(booking, missing_fields):
+    """
+    Friendly, *specific* follow-up. Asks ONLY for what's missing
+    (date / time / both) instead of dumping a generic list.
+    Bilingual EN + VI so the customer can answer in either language.
+    """
+    missing_set = set(missing_fields or [])
+    need_date = "preferred_date" in missing_set
+    need_time = "preferred_time" in missing_set
+
+    if need_date and need_time:
+        ask_en = (
+            "we have your booking request but still need both the **date** "
+            "and the **time** you'd like to come in. "
+            "Just reply with something like \"Friday 23/5 at 3pm\"."
+        )
+        ask_vi = (
+            "Chung toi da nhan yeu cau dat lich cua ban, nhung van can biet "
+            "**ngay** va **gio** cu the ban muon den. "
+            "Xin tra loi lai email nay, vi du \"thu 6 ngay 23/5 luc 15h\"."
+        )
+    elif need_time:
+        date_str = booking.get("preferred_date") or "your chosen day"
+        ask_en = (
+            f"we have your booking for **{date_str}**, but we still need the "
+            f"**time of day** you'd like to come in. "
+            f"Just reply with the time, for example \"3pm\" or \"15:00\"."
+        )
+        ask_vi = (
+            f"Chung toi da nhan lich hen cua ban vao **{date_str}**, "
+            f"nhung can biet **may gio** ban muon den. "
+            f"Xin tra loi email nay kem gio cu the, vi du \"15h\" hoac \"3pm\"."
+        )
+    elif need_date:
+        time_str = booking.get("preferred_time") or "your chosen time"
+        ask_en = (
+            f"we have your preferred time **{time_str}**, but we still need the "
+            f"**date** you'd like to come in. "
+            f"Just reply with the date, for example \"23/5\" or \"next Friday\"."
+        )
+        ask_vi = (
+            f"Chung toi da nhan gio hen **{time_str}**, nhung can biet "
+            f"**ngay thang** cu the ban muon den. "
+            f"Xin tra loi email nay kem ngay, vi du \"23/5\" hoac \"thu 6 toi\"."
+        )
+    else:
+        items = ", ".join(f.replace('_', ' ') for f in missing_fields) or "more details"
+        ask_en = f"we need a little more info to confirm your booking: {items}."
+        ask_vi = f"Chung toi can them thong tin sau de xac nhan lich hen: {items}."
+
     subject = "We need a few details to confirm your booking"
-    missing_text = "\n".join(f"- {f.replace('_',' ').title()}" for f in missing_fields)
     body = (
         f"Hi {_name(booking)},\n\n"
-        f"{_opener(booking.get('sentiment'))} "
-        "We started processing your booking but need a little more information "
-        "before we can confirm:\n\n"
-        f"{missing_text}\n\n"
-        "Just reply to this email with those details and we'll take it from there.\n\n"
+        f"{_opener(booking.get('sentiment'))} {ask_en}\n\n"
+        f"{ask_vi}\n\n"
+        f"{_signature()}\n"
+    )
+    return subject, body
+
+
+def followup_complete(booking):
+    """
+    Sent when the customer's reply supplied the last missing piece(s)
+    and the booking moves from Need More Info -> Pending.
+    """
+    subject = "Thanks - your booking is being processed"
+    body = (
+        f"Hi {_name(booking)},\n\n"
+        "Thanks for the extra information! We now have everything we need:\n\n"
+        f"{_details(booking)}\n\n"
+        "Your booking is now in our pending queue and our team will confirm "
+        "it shortly.\n\n"
+        "Cam on ban da cung cap them thong tin. Lich hen cua ban da duoc "
+        "tiep nhan day du va doi ngu se xac nhan som.\n\n"
         f"{_signature()}\n"
     )
     return subject, body
@@ -66,7 +130,7 @@ def confirmed(booking):
     subject = "Booking confirmed"
     body = (
         f"Hi {_name(booking)},\n\n"
-        "Good news — your booking has been confirmed.\n\n"
+        "Good news - your booking has been confirmed.\n\n"
         f"{_details(booking)}\n\n"
         "We look forward to seeing you.\n\n"
         f"{_signature()}\n"
@@ -109,7 +173,7 @@ def completed(booking):
         f"Hi {_name(booking)},\n\n"
         "Thanks for choosing us. Your appointment has been marked as completed:\n\n"
         f"{_details(booking)}\n\n"
-        "If you have a moment, just reply with feedback — we'd love to hear it.\n\n"
+        "If you have a moment, just reply with feedback - we'd love to hear it.\n\n"
         f"{_signature()}\n"
     )
     return subject, body
@@ -142,7 +206,7 @@ def price_acknowledged():
 
 
 def complaint_acknowledged():
-    return ("We're sorry — your feedback has been received",
+    return ("We're sorry - your feedback has been received",
             "Hi,\n\nThank you for letting us know. We take your feedback "
             "seriously and a senior team member will be in touch shortly "
             "to resolve this with you.\n\n" + _signature() + "\n")
